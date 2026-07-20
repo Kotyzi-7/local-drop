@@ -148,7 +148,7 @@ const allBits=[];for(let i=0;i<dPB;i++)for(let b=0;b<nBlocks;b++)for(let k=7;k>=
 for(let i=0;i<ecPB;i++)for(let b=0;b<nBlocks;b++)for(let k=7;k>=0;k--)allBits.push((eBlocks[b][i]>>k)&1);
 const mod=Array.from({length:size},()=>new Uint8Array(size)),res=Array.from({length:size},()=>new Uint8Array(size));
 function sm(r,c,v){if(r>=0&&r<size&&c>=0&&c<size){mod[r][c]=v?1:0;res[r][c]=1}}
-function sf(r,c){for(let dr=0;dr<7;dr++)for(let dc=0;dc<7;dc++){const bd=dr===0||dr===6||dc===0||dc===6,in2=dr>=2&&dr<=4&&dc>=2&&dc===dc;sm(r+dr,c+dc,bd||in2)}
+function sf(r,c){for(let dr=0;dr<7;dr++)for(let dc=0;dc<7;dc++){const bd=dr===0||dr===6||dc===0||dc===6,in2=dr>=2&&dr<=4&&dc>=2&&dc<=4;sm(r+dr,c+dc,bd||in2)}
 for(let i=0;i<7;i++){sm(r-1,c+i,0);sm(r+7,c+i,0);sm(r+i,c-1,0);sm(r+i,c+7,0)}sm(r-1,c-1,0);sm(r-1,c+7,0);sm(r+7,c-1,0);sm(r+7,c+7,0)}
 sf(0,0);sf(0,size-7);sf(size-7,0);
 for(let i=0;i<size;i++){if(!res[6][i])sm(6,i,i%2===0);if(!res[i][6])sm(i,6,i%2===0)}
