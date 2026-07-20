@@ -128,100 +128,50 @@ req.onload=()=>{progress.hidden=true;speedEl.textContent='';status.textContent=r
 req.onerror=()=>{progress.hidden=true;speedEl.textContent='';status.textContent='Upload failed.'};req.send(data)}
 input.onchange=()=>upload(input.files);['dragenter','dragover'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>upload(e.dataTransfer.files));document.querySelector('#refresh').onclick=loadFiles;loadFiles();
 function generateQR(text){
-const EC_LEVEL=1;
-const VERSIONS=[
-{size:21,ecTotal:26,ecBlocks:[{count:1,ecPerBlock:10}],groups:[{count:1,dataPerBlock:16}]},
-{size:25,ecTotal:44,ecBlocks:[{count:1,ecPerBlock:16}],groups:[{count:1,dataPerBlock:28}]},
-{size:29,ecTotal:70,ecBlocks:[{count:1,ecPerBlock:26}],groups:[{count:1,dataPerBlock:44}]},
-{size:33,ecTotal:100,ecBlocks:[{count:2,ecPerBlock:18}],groups:[{count:2,dataPerBlock:32}]},
-{size:37,ecTotal:134,ecBlocks:[{count:2,ecPerBlock:24}],groups:[{count:2,dataPerBlock:43}]},
-{size:41,ecTotal:172,ecBlocks:[{count:4,ecPerBlock:16}],groups:[{count:4,dataPerBlock:27}]},
-{size:45,ecTotal:196,ecBlocks:[{count:4,ecPerBlock:20}],groups:[{count:4,dataPerBlock:31}]},
-{size:49,ecTotal:242,ecBlocks:[{count:2,ecPerBlock:26}],groups:[{count:2,dataPerBlock:38},{count:2,ecPerBlock:26}],dataGroups:[{count:2,dataPerBlock:38},{count:2,dataPerBlock:38}]}
-];
-const ALIGN=[[0],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62]];
 const GF_EXP=new Uint8Array(512),GF_LOG=new Uint8Array(256);
-let v=1;for(let i=0;i<255;i++){GF_EXP[i]=v;GF_LOG[v]=i;v=v*2^(v>=128?285:0)}for(let i=255;i<512;i++)GF_EXP[i]=GF_EXP[i-255];
+let gv=1;for(let i=0;i<255;i++){GF_EXP[i]=gv;GF_LOG[gv]=i;gv=(gv<<1)^(gv>=128?0x11D:0)}for(let i=255;i<512;i++)GF_EXP[i]=GF_EXP[i-255];
 function gfMul(a,b){return a===0||b===0?0:GF_EXP[GF_LOG[a]+GF_LOG[b]]}
-function rsGenPoly(n){let p=[1];for(let i=0;i<n;i++){const np=new Uint8Array(p.length+1);np[0]=p[0];for(let j=1;j<p.length;j++){np[j]=p[j]^gfMul(p[j-1],GF_EXP[i])}np[p.length]=gfMul(p[p.length-1],GF_EXP[i]);p=np}return p}
-function rsEncode(data,ecLen){
-const poly=rsGenPoly(ecLen);
-const result=new Uint8Array(data.length+ecLen);
-result.set(data);
-for(let i=0;i<data.length;i++){const f=result[i];if(f!==0)for(let j=1;j<poly.length;j++)result[i+j]^=gfMul(poly[j],f)}
-return result.slice(data.length)}
+function rsGenPoly(n){let p=[1];for(let i=0;i<n;i++){const np=new Uint8Array(p.length+1);np[0]=p[0];for(let j=1;j<p.length;j++)np[j]=p[j]^gfMul(p[j-1],GF_EXP[i]);np[p.length]=gfMul(p[p.length-1],GF_EXP[i]);p=np}return p}
+function rsEncode(data,ecLen){const poly=rsGenPoly(ecLen),result=new Uint8Array(data.length+ecLen);result.set(data);for(let i=0;i<data.length;i++){const f=result[i];if(f)for(let j=1;j<poly.length;j++)result[i+j]^=gfMul(poly[j],f)}return result.slice(data.length)}
+const VDATA=[[21,26,10,1,16],[25,44,16,1,28],[29,70,26,1,44],[33,100,18,2,32],[37,134,24,2,43],[41,172,16,4,27],[45,196,20,4,31],[49,242,24,2,38]];
+const ALIGN=[[0],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42]];
 const bytes=new TextEncoder().encode(text);
-let ver=-1;for(let i=0;i<VERSIONS.length;i++){const total=VERSIONS[i].groups.reduce((s,g)=>s+g.count*g.dataPerBlock,0);if(bytes.length<=total-3){ver=i;break}}
-if(ver<0)ver=VERSIONS.length-1;
-const V=VERSIONS[ver],size=V.size;
-const totalData=V.groups.reduce((s,g)=>s+g.count*g.dataPerBlock,0);
-const dataBlocks=[];
-let offset=0;
-for(const g of V.groups){for(let i=0;i<g.count;i++){dataBlocks.push(bytes.slice(offset,offset+g.dataPerBlock));offset+=g.dataPerBlock}}
-while(offset<totalData){dataBlocks.push(new Uint8Array(V.groups[0].dataPerBlock));offset+=V.groups[0].dataPerBlock}
-const ecPerBlock=V.ecBlocks[0].ecPerBlock;
-const allBlocks=[],ecBlocks=[];
-for(const b of dataBlocks){const padded=new Uint8Array(V.groups[0].dataPerBlock);padded.set(b);allBlocks.push(padded);ecBlocks.push(rsEncode(padded,ecPerBlock))}
-const modules=Array.from({length:size},()=>new Uint8Array(size));
-const reserved=Array.from({length:size},()=>new Uint8Array(size));
-function setMod(r,c,mod){if(r>=0&&r<size&&c>=0&&c<size){modules[r][c]=mod?1:0;reserved[r][c]=1}}
-function setFinder(r,c){
-for(let dr=0;dr<7;dr++)for(let dc=0;dc<7;dc++){
-const border=dr===0||dr===6||dc===0||dc===6;
-const inner=dr>=2&&dr<=4&&dc>=2&&dc<=4;
-setMod(r+dr,c+dc,border||inner)}
-for(let i=0;i<7;i++){setMod(r-1,c+i,0);setMod(r+7,c+i,0);setMod(r+i,c-1,0);setMod(r+i,c+7,0)}
-setMod(r-1,c-1,0);setMod(r-1,c+7,0);setMod(r+7,c-1,0);setMod(r+7,c+7,0)}
-setFinder(0,0);setFinder(0,size-7);setFinder(size-7,0);
-for(let i=0;i<size;i++){if(!reserved[6][i])setMod(6,i,i%2===0);if(!reserved[i][6])setMod(i,6,i%2===0)}
-if(ver>=1){const positions=ALIGN[ver];for(const r of positions)for(const c of positions){if(reserved[r][c])continue;
-for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++){const b=Math.max(Math.abs(dr),Math.abs(dc))===2;setMod(r+dr,c+dc,!b)}}}
-setMod(size-8,8,1);
-let bitIndex=0;
-const bitData=[];
-for(let i=0;i<allBlocks.length;i++){const b=allBlocks[i];for(let j=0;j<b.length;j++)for(let k=7;k>=0;k--)bitData.push((b[j]>>k)&1)}
-for(let i=0;i<ecBlocks.length;i++){const b=ecBlocks[i];for(let j=0;j<b.length;j++)for(let k=7;k>=0;k--)bitData.push((b[j]>>k)&1)}
-bitIndex=0;
-let row=size-1,col=size-1,dir=-1;
-while(col>=0){if(col===6)col--;
-for(let i=0;i<size;i++){const r=row+i*dir;if(r<0||r>=size)continue;
-for(let dc=0;dc<=1;dc++){const c=col-dc;if(c<0||c>=size||reserved[r][c])continue;
-modules[r][c]=bitIndex<bitData.length?bitData[bitIndex]:0;bitIndex++}}
-dir=-dir;col-=2}
-const masks=[
-(r,c)=>(r+c)%2===0,(r,c)=>r%2===0,(r,c)=>c%3===0,
-(r,c)=>(r+c)%3===0,(r,c)=>(Math.floor(r/2)+Math.floor(c/3))%2===0,
-(r,c)=>(r*c)%2+(r*c)%3===0,(r,c)=>((r*c)%2+(r*c)%3)%2===0,(r,c)=>((r+c)%2+(r*c)%3)%2===0
-];
-function penalty(m){let p=0;
-for(let r=0;r<size;r++){let cnt=1;for(let c=1;c<size;c++){if(m[r][c]===m[r][c-1])cnt++;else{if(cnt>=5)p+=cnt-2;cnt=1}}if(cnt>=5)p+=cnt-2}
-for(let c=0;c<size;c++){let cnt=1;for(let r=1;r<size;r++){if(m[r][c]===m[r-1][c])cnt++;else{if(cnt>=5)p+=cnt-2;cnt=1}}if(cnt>=5)p+=cnt-2}
-for(let r=0;r<size-1;r++)for(let c=0;c<size-1;c++){const v=m[r][c];if(v===m[r][c+1]&&v===m[r+1][c]&&v===m[r+1][c+1])p+=3}
-let rl=0;for(let r=0;r<size;r++)for(let c=0;c<size;c++){if(m[r][c]===1){rl++;if(rl===5)p+=3;else if(rl>5)p+=1}else rl=0}
-let cl=0;for(let c=0;c<size;c++)for(let r=0;r<size;r++){if(m[r][c]===1){cl++;if(cl===5)p+=3;else if(cl>5)p+=1}else cl=0}
-return p}
-let bestMask=0,bestPenalty=Infinity;
-for(let m=0;m<8;m++){
-const masked=modules.map(r=>Uint8Array.from(r));
-for(let r=0;r<size;r++)for(let c=0;c<size;c++){if(!reserved[r][c]&&masks[m](r,c))masked[r][c]^=1}
-const p=penalty(masked);if(p<bestPenalty){bestPenalty=p;bestMask=m}}
-const final=modules.map(r=>Uint8Array.from(r));
-for(let r=0;r<size;r++)for(let c=0;c<size;c++){if(!reserved[r][c]&&masks[bestMask](r,c))final[r][c]^=1}
-const formatBits=((EC_LEVEL<<3)|bestMask);
-let fmt=formatBits<<10;for(let i=0;i<10;i++)fmt=fmt&(1<<9)?fmt^(0x537<<(9-i)):fmt;
-const fb=(fmt^(0x5412)).toString(2).padStart(15,'0');
-for(let i=0;i<6;i++)setMod(8,i,parseInt(fb[i]));
-for(let i=0;i<7;i++)setMod(8,size-1-i,parseInt(fb[14-i]));
-for(let i=0;i<7;i++)setMod(size-1-i,8,parseInt(fb[i]));
-for(let i=0;i<8;i++)setMod(i,8,parseInt(fb[14-i]));
-setMod(size-8,8,1);
-const canvas=document.createElement('canvas');
-const px=size+8;canvas.width=px*4;canvas.height=px*4;
-const ctx=canvas.getContext('2d');
-ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
-ctx.fillStyle='#000';
-for(let r=0;r<size;r++)for(let c=0;c<size;c++){if(final[r][c])ctx.fillRect((c+4)*4,(r+4)*4,4,4)}
-return canvas}
+let vi=-1;for(let i=0;i<VDATA.length;i++){if(bytes.length<=VDATA[i][3]*VDATA[i][4]-2){vi=i;break}}if(vi<0)vi=VDATA.length-1;
+const[size,totCW,ecPB,nBlocks,dPB]=VDATA[vi],totData=nBlocks*dPB;
+const db=[];db.push(0,1,0,0);for(let i=7;i>=0;i--)db.push((bytes.length>>i)&1);
+for(const b of bytes)for(let i=7;i>=0;i--)db.push((b>>i)&1);
+const maxBits=totData*8,tl=Math.min(4,maxBits-db.length);for(let i=0;i<tl;i++)db.push(0);
+while(db.length%8)db.push(0);let pi=0;while(db.length<maxBits){const pb=pi%2?0x11:0xEC;for(let i=7;i>=0;i--)db.push((pb>>i)&1);pi++}
+const dB=[];for(let i=0;i<db.length;i+=8){let v=0;for(let j=0;j<8;j++)v=(v<<1)|db[i+j];dB.push(v)}
+const dBlocks=[],eBlocks=[];let off=0;for(let b=0;b<nBlocks;b++){const bl=new Uint8Array(dPB);for(let i=0;i<dPB;i++)bl[i]=dB[off++];dBlocks.push(bl);eBlocks.push(rsEncode(bl,ecPB))}
+const allBits=[];for(let i=0;i<dPB;i++)for(let b=0;b<nBlocks;b++)for(let k=7;k>=0;k--)allBits.push((dBlocks[b][i]>>k)&1);
+for(let i=0;i<ecPB;i++)for(let b=0;b<nBlocks;b++)for(let k=7;k>=0;k--)allBits.push((eBlocks[b][i]>>k)&1);
+const mod=Array.from({length:size},()=>new Uint8Array(size)),res=Array.from({length:size},()=>new Uint8Array(size));
+function sm(r,c,v){if(r>=0&&r<size&&c>=0&&c<size){mod[r][c]=v?1:0;res[r][c]=1}}
+function sf(r,c){for(let dr=0;dr<7;dr++)for(let dc=0;dc<7;dc++){const bd=dr===0||dr===6||dc===0||dc===6,in2=dr>=2&&dr<=4&&dc>=2&&dc===dc;sm(r+dr,c+dc,bd||in2)}
+for(let i=0;i<7;i++){sm(r-1,c+i,0);sm(r+7,c+i,0);sm(r+i,c-1,0);sm(r+i,c+7,0)}sm(r-1,c-1,0);sm(r-1,c+7,0);sm(r+7,c-1,0);sm(r+7,c+7,0)}
+sf(0,0);sf(0,size-7);sf(size-7,0);
+for(let i=0;i<size;i++){if(!res[6][i])sm(6,i,i%2===0);if(!res[i][6])sm(i,6,i%2===0)}
+if(ALIGN[vi])for(const r of ALIGN[vi])for(const c of ALIGN[vi]){if(res[r][c])continue;for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++)sm(r+dr,c+dc,Math.max(Math.abs(dr),Math.abs(dc))!==2)}
+sm(4*vi+9,8,1);
+for(let i=0;i<15;i++){if(i<6)res[8][i]=1;else if(i<8)res[8][i+1]=1;else if(i===8)res[8][8]=1;else res[14-i][8]=1;
+if(i<7)res[size-1-i][8]=1;res[8][size-8+i-(i>=7?7:0)]=1}
+let bi=0,row=size-1,col=size-1,dir=-1;
+while(col>=0){if(col===6)col--;for(let i=0;i<size;i++){const r=row+i*dir;if(r<0||r>=size)continue;
+for(let dc=0;dc<=1;dc++){const c=col-dc;if(c<0||c>=size||res[r][c])continue;mod[r][c]=bi<allBits.length?allBits[bi]:0;bi++}}dir=-dir;col-=2}
+const masks=[(r,c)=>(r+c)%2===0,(r,c)=>r%2===0,(r,c)=>c%3===0,(r,c)=>(r+c)%3===0,(r,c)=>((r>>1)+(c/3|0))%2===0,(r,c)=>(r*c)%2+(r*c)%3===0,(r,c)=>((r*c)%2+(r*c)%3)%2===0,(r,c)=>((r+c)%2+(r*c)%3)%2===0];
+function pen(m){let p=0;for(let r=0;r<size;r++){let n=1;for(let c=1;c<size;c++){if(m[r][c]===m[r][c-1])n++;else{if(n>=5)p+=n-2;n=1}}if(n>=5)p+=n-2}
+for(let c=0;c<size;c++){let n=1;for(let r=1;r<size;r++){if(m[r][c]===m[r-1][c])n++;else{if(n>=5)p+=n-2;n=1}}if(n>=5)p+=n-2}
+for(let r=0;r<size-1;r++)for(let c=0;c<size-1;c++){const v=m[r][c];if(v===m[r][c+1]&&v===m[r+1][c]&&v===m[r+1][c+1])p+=3}return p}
+let bm=0,bp=1e9;for(let m=0;m<8;m++){const mk=mod.map(r=>Uint8Array.from(r));for(let r=0;r<size;r++)for(let c=0;c<size;c++)if(!res[r][c]&&masks[m](r,c))mk[r][c]^=1;const p=pen(mk);if(p<bp){bp=p;bm=m}}
+const fin=mod.map(r=>Uint8Array.from(r));for(let r=0;r<size;r++)for(let c=0;c<size;c++)if(!res[r][c]&&masks[bm](r,c))fin[r][c]^=1;
+let fmt=bm<<10;for(let i=4;i>=0;i--)if(fmt&(1<<(i+10)))fmt^=0x537<<i;const fs=(fmt^0x5412).toString(2).padStart(15,'0');
+const fp1=[[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[8,7],[8,8],[7,8],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8]];
+const fp2=[[size-1,8],[size-2,8],[size-3,8],[size-4,8],[size-5,8],[size-6,8],[size-7,8],[8,size-8],[8,size-7],[8,size-6],[8,size-5],[8,size-4],[8,size-3],[8,size-2],[8,size-1]];
+for(let i=0;i<15;i++){const b=+fs[14-i];fin[fp1[i][0]][fp1[i][1]]=b;fin[fp2[i][0]][fp2[i][1]]=b}
+const cv=document.createElement('canvas'),px=size+8;cv.width=px*4;cv.height=px*4;const cx=cv.getContext('2d');
+cx.fillStyle='#fff';cx.fillRect(0,0,cv.width,cv.height);cx.fillStyle='#000';
+for(let r=0;r<size;r++)for(let c=0;c<size;c++)if(fin[r][c])cx.fillRect((c+4)*4,(r+4)*4,4,4);return cv}
 document.querySelector('#qr-container').appendChild(generateQR(location.href));
 </script></body></html>"""
 
