@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "local-drop"
+version = "1.0.0"
+description = "A dependency-free LAN file sharing server"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "Kotyzi-7" },
+]
+keywords = ["lan", "file-sharing", "local-network", "server"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: System :: File Sharing",
+]
+
+[project.scripts]
+local-drop = "local_share:main"
+
+[project.urls]
+Homepage = "https://github.com/Kotyzi-7/local-drop"
+Repository = "https://github.com/Kotyzi-7/local-drop"
+Issues = "https://github.com/Kotyzi-7/local-drop/issues"
+
+[tool.setuptools]
+py-modules = ["local_share"]
